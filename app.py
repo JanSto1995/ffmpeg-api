@@ -5,11 +5,18 @@ import os
 
 app = Flask(__name__)
 
+# Health check endpoint for Render
+@app.route('/healthz', methods=['GET'])
+def healthz():
+    return 'OK', 200
+
 @app.route('/merge', methods=['POST'])
 def merge_audio_video():
-    video_url = request.json['video_url']
-    audio_url = request.json['audio_url']
-    
+    video_url = request.json.get('video_url')
+    audio_url = request.json.get('audio_url')
+    if not video_url or not audio_url:
+        return jsonify({'error': 'Please provide video_url and audio_url'}), 400
+
     # Generate unique filenames
     video_file = f"{uuid.uuid4()}.mp4"
     audio_file = f"{uuid.uuid4()}.wav"
@@ -19,20 +26,22 @@ def merge_audio_video():
     os.system(f"curl -L -o {video_file} {video_url}")
     os.system(f"curl -L -o {audio_file} {audio_url}")
     
-    # FFmpeg command with ducking (lower added audio by 10 dB)
+    # FFmpeg command with ducking (added audio lowered by ~10 dB)
     command = (
         f'ffmpeg -y -i {video_file} -i {audio_file} '
         f'-filter_complex "[1:a]volume=0.3162[a1]; [0:a][a1]amix=inputs=2" '
         f'-c:v copy {output_file}'
     )
-    
-    subprocess.run(command, shell=True)
+    subprocess.run(command, shell=True, check=True)
     
     # Move output to static folder
-    os.system(f"mv {output_file} static/{output_file}")
+    os.makedirs('static', exist_ok=True)
+    os.replace(output_file, os.path.join('static', output_file))
 
+    # Construct and return public URL
+    render_url = os.getenv('RENDER_EXTERNAL_URL') or 'https://YOUR_RENDER_URL'
     return jsonify({
-        'url': f'https://YOUR_RENDER_URL/static/{output_file}'
+        'url': f'{render_url}/static/{output_file}'
     })
 
 if __name__ == '__main__':
