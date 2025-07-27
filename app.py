@@ -73,4 +73,30 @@ def merge_audio_video_soft_duck():
         f'-show_entries stream=codec_type '
         f'-of default=noprint_wrappers=1:nokey=1 {video_file}'
     )
-    result = subprocess.run(check_audio_cmd, shell=True, capture_output=True, te_
+    result = subprocess.run(check_audio_cmd, shell=True, capture_output=True, text=True)
+    video_has_audio = bool(result.stdout.strip())
+
+    if video_has_audio:
+        # Duck video audio instead of external audio
+        command = (
+            f'ffmpeg -y -i {video_file} -i {audio_file} '
+            f'-filter_complex "[0:a]volume=0.3162[a0]; [1:a][a0]amix=inputs=2" '
+            f'-c:v copy {output_file}'
+        )
+    else:
+        command = (
+            f'ffmpeg -y -i {video_file} -i {audio_file} '
+            f'-map 0:v -map 1:a -c:v copy -shortest {output_file}'
+        )
+
+    subprocess.run (command, shell=True, check=True)
+    os.makedirs('static', exist_ok=True)
+    os.replace(output_file, os.path.join('static', output_file))
+
+    render_url = os.getenv('RENDER_EXTERNAL_URL') or 'https://YOUR_RENDER_URL'
+    return jsonify({
+        'url': f'{render_url}/static/{output_file}'
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8000)
